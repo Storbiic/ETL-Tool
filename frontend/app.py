@@ -11,7 +11,8 @@ from components import (
     add_log, display_logs, display_kpi_metrics, create_status_chart,
     display_dataframe_with_search, create_progress_bar, display_file_info,
     display_error_message, display_success_message, fix_dataframe_types,
-    create_distribution_chart, create_comparison_chart, create_processing_flow_chart
+    create_distribution_chart, create_comparison_chart, create_processing_flow_chart,
+    create_trend_analysis_chart
 )
 
 # Page configuration

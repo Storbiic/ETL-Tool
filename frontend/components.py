@@ -141,26 +141,32 @@ def create_status_chart(kpi_counts: Dict[str, int]):
     # Prepare data for chart
     labels = list(kpi_counts.keys())
     values = list(kpi_counts.values())
+    total = sum(values) if values else 1
+    percentages = [v/total*100 for v in values]
 
     # Create bar chart
-    fig = px.bar(
-        x=labels,
-        y=values,
-        title="Activation Status Distribution",
-        color=labels,
-        color_discrete_sequence=px.colors.qualitative.Set3
-    )
+    fig = go.Figure(data=[
+        go.Bar(
+            x=labels,
+            y=values,
+            name='Count',
+            marker_color=px.colors.qualitative.Set3[:len(labels)],
+            text=[f'{v}<br>({p:.1f}%)' for v, p in zip(values, percentages)],
+            textposition='auto',
+            hovertemplate='<b>%{x}</b><br>Count: %{y}<br>Percentage: %{customdata:.1f}%<extra></extra>',
+            customdata=percentages
+        )
+    ])
 
+    # Update layout
     fig.update_layout(
-        showlegend=False,
+        title="Activation Status Distribution",
         height=400,
         font=dict(size=12),
+        showlegend=False,
         xaxis_title="Activation Status",
         yaxis_title="Count"
     )
-
-    # Add value labels on bars
-    fig.update_traces(texttemplate='%{y}', textposition='outside')
 
     return fig
 
@@ -232,7 +238,7 @@ def display_dataframe_with_search(df: pd.DataFrame, key: str):
 
 
 def create_distribution_chart(distribution: Dict[str, int], title: str = "Status Distribution"):
-    """Create a pie chart for status distribution"""
+    """Create a bar chart with line overlay for status distribution"""
     if not distribution or sum(distribution.values()) == 0:
         return None
 
@@ -242,36 +248,78 @@ def create_distribution_chart(distribution: Dict[str, int], title: str = "Status
     if not filtered_dist:
         return None
 
-    # Create pie chart
-    fig = px.pie(
-        values=list(filtered_dist.values()),
-        names=list(filtered_dist.keys()),
-        title=title,
-        color_discrete_map={
-            'X': '#ff6b6b',      # Red for X (active)
-            'D': '#4ecdc4',      # Teal for D (discontinued)
-            '0': '#45b7d1',      # Blue for 0 (inactive)
-            'OTHER': '#96ceb4'   # Green for other
-        }
+    # Prepare data
+    categories = list(filtered_dist.keys())
+    values = list(filtered_dist.values())
+    total = sum(values)
+    percentages = [v/total*100 for v in values]
+
+    # Color mapping
+    color_map = {
+        'X': '#ff6b6b',      # Red for X (active)
+        'D': '#4ecdc4',      # Teal for D (discontinued)
+        '0': '#45b7d1',      # Blue for 0 (inactive)
+        'OTHER': '#96ceb4'   # Green for other
+    }
+    colors = [color_map.get(cat, '#95a5a6') for cat in categories]
+
+    # Create subplot with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Add bar chart
+    fig.add_trace(
+        go.Bar(
+            x=categories,
+            y=values,
+            name='Count',
+            marker_color=colors,
+            text=[f'{v}<br>({p:.1f}%)' for v, p in zip(values, percentages)],
+            textposition='auto',
+            hovertemplate='<b>%{x}</b><br>Count: %{y}<br>Percentage: %{text}<extra></extra>'
+        ),
+        secondary_y=False,
     )
 
-    fig.update_traces(
-        textposition='inside',
-        textinfo='percent+label',
-        hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}<extra></extra>'
+    # Add line with dots for percentage
+    fig.add_trace(
+        go.Scatter(
+            x=categories,
+            y=percentages,
+            mode='lines+markers',
+            name='Percentage',
+            line=dict(color='#2c3e50', width=3),
+            marker=dict(size=10, color='#e74c3c', line=dict(width=2, color='white')),
+            yaxis='y2',
+            hovertemplate='<b>%{x}</b><br>Percentage: %{y:.1f}%<extra></extra>'
+        ),
+        secondary_y=True,
     )
 
+    # Update layout
     fig.update_layout(
+        title=title,
+        height=450,
+        font=dict(size=12),
         showlegend=True,
-        height=400,
-        font=dict(size=12)
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
+
+    # Set y-axes titles
+    fig.update_yaxes(title_text="Count", secondary_y=False)
+    fig.update_yaxes(title_text="Percentage (%)", secondary_y=True)
+    fig.update_xaxes(title_text="Status Categories")
 
     return fig
 
 
 def create_comparison_chart(original_dist: Dict[str, int], new_dist: Dict[str, int]):
-    """Create a comparison bar chart showing before vs after"""
+    """Create a comparison chart with bars and line overlay showing before vs after"""
     if not original_dist or not new_dist:
         return None
 
@@ -280,57 +328,220 @@ def create_comparison_chart(original_dist: Dict[str, int], new_dist: Dict[str, i
     original_values = [original_dist.get(cat, 0) for cat in categories]
     new_values = [new_dist.get(cat, 0) for cat in categories]
 
-    fig = go.Figure(data=[
-        go.Bar(name='Before Processing', x=categories, y=original_values,
-               marker_color='lightblue', text=original_values, textposition='auto'),
-        go.Bar(name='After Processing', x=categories, y=new_values,
-               marker_color='darkblue', text=new_values, textposition='auto')
-    ])
+    # Calculate changes
+    changes = [new - orig for orig, new in zip(original_values, new_values)]
 
+    # Create subplot with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Add grouped bar chart
+    fig.add_trace(
+        go.Bar(
+            name='Before Processing',
+            x=categories,
+            y=original_values,
+            marker_color='#3498db',
+            text=original_values,
+            textposition='auto',
+            offsetgroup=1,
+            hovertemplate='<b>%{x}</b><br>Before: %{y}<extra></extra>'
+        ),
+        secondary_y=False,
+    )
+
+    fig.add_trace(
+        go.Bar(
+            name='After Processing',
+            x=categories,
+            y=new_values,
+            marker_color='#2c3e50',
+            text=new_values,
+            textposition='auto',
+            offsetgroup=2,
+            hovertemplate='<b>%{x}</b><br>After: %{y}<extra></extra>'
+        ),
+        secondary_y=False,
+    )
+
+    # Add line plot showing changes with dots
+    fig.add_trace(
+        go.Scatter(
+            x=categories,
+            y=changes,
+            mode='lines+markers',
+            name='Net Change',
+            line=dict(color='#e74c3c', width=3),
+            marker=dict(
+                size=12,
+                color=['#27ae60' if c >= 0 else '#e74c3c' for c in changes],
+                line=dict(width=2, color='white')
+            ),
+            yaxis='y2',
+            hovertemplate='<b>%{x}</b><br>Change: %{y:+d}<extra></extra>'
+        ),
+        secondary_y=True,
+    )
+
+    # Update layout
     fig.update_layout(
         title='Distribution Comparison: Before vs After Processing',
-        xaxis_title='Status Categories',
-        yaxis_title='Number of Items',
+        height=450,
+        font=dict(size=12),
+        showlegend=True,
         barmode='group',
-        height=400,
-        showlegend=True
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
+
+    # Set y-axes titles
+    fig.update_yaxes(title_text="Number of Items", secondary_y=False)
+    fig.update_yaxes(title_text="Net Change", secondary_y=True)
+    fig.update_xaxes(title_text="Status Categories")
 
     return fig
 
 
 def create_processing_flow_chart(processing_stats: Dict[str, Any]):
-    """Create a flow chart showing processing statistics"""
+    """Create a horizontal bar chart showing processing flow statistics"""
     if not processing_stats:
         return None
 
-    # Create a sankey diagram showing the flow
-    fig = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=["Total Items", "In Target", "Not in Target", "Status X", "Status Other", "Updated to D", "Kept as X"],
-            color=["blue", "green", "orange", "red", "gray", "teal", "red"]
-        ),
-        link=dict(
-            source=[0, 0, 2, 2, 3, 3],  # indices correspond to labels
-            target=[1, 2, 3, 4, 5, 6],
-            value=[
-                processing_stats.get("total_checked", 0) - processing_stats.get("not_in_target_count", 0),  # In target
-                processing_stats.get("not_in_target_count", 0),  # Not in target
-                processing_stats.get("updated_count", 0),  # Status X (to be updated)
-                processing_stats.get("not_in_target_count", 0) - processing_stats.get("updated_count", 0),  # Other status
-                processing_stats.get("updated_count", 0),  # Updated to D
-                0  # Kept as X (calculated)
-            ]
+    # Prepare data for processing flow
+    total_checked = processing_stats.get("total_checked", 0)
+    not_in_target = processing_stats.get("not_in_target_count", 0)
+    updated_count = processing_stats.get("updated_count", 0)
+    in_target = total_checked - not_in_target
+    other_status = not_in_target - updated_count
+
+    # Create data for horizontal bar chart
+    categories = [
+        'Total Items Checked',
+        'Items in Target Sheet',
+        'Items NOT in Target',
+        'Status X (Updated to D)',
+        'Other Status (Unchanged)'
+    ]
+
+    values = [
+        total_checked,
+        in_target,
+        not_in_target,
+        updated_count,
+        other_status
+    ]
+
+    # Color scheme for different categories
+    colors = [
+        '#3498db',  # Blue for total
+        '#2ecc71',  # Green for in target
+        '#f39c12',  # Orange for not in target
+        '#e74c3c',  # Red for updated
+        '#95a5a6'   # Gray for other
+    ]
+
+    # Create horizontal bar chart
+    fig = go.Figure(data=[
+        go.Bar(
+            y=categories,
+            x=values,
+            orientation='h',
+            marker_color=colors,
+            text=values,
+            textposition='auto',
+            hovertemplate='<b>%{y}</b><br>Count: %{x}<extra></extra>'
         )
-    )])
+    ])
+
+    # Add line plot overlay showing processing efficiency
+    if total_checked > 0:
+        efficiency_categories = ['Processing Efficiency', 'Update Rate', 'Target Coverage']
+        efficiency_values = [
+            (updated_count / not_in_target * 100) if not_in_target > 0 else 0,  # Update efficiency
+            (updated_count / total_checked * 100),  # Overall update rate
+            (in_target / total_checked * 100)  # Target coverage
+        ]
+
+        # Create secondary subplot for efficiency metrics
+        fig.add_trace(
+            go.Scatter(
+                x=efficiency_values,
+                y=efficiency_categories,
+                mode='lines+markers',
+                name='Efficiency %',
+                line=dict(color='#9b59b6', width=3),
+                marker=dict(size=12, color='#8e44ad', line=dict(width=2, color='white')),
+                yaxis='y2',
+                xaxis='x2',
+                hovertemplate='<b>%{y}</b><br>Percentage: %{x:.1f}%<extra></extra>'
+            )
+        )
 
     fig.update_layout(
-        title_text="Pre-existing Items Processing Flow",
-        font_size=10,
-        height=400
+        title="Pre-existing Items Processing Flow Analysis",
+        height=450,
+        font=dict(size=12),
+        showlegend=True,
+        xaxis_title="Number of Items",
+        yaxis_title="Processing Categories",
+        margin=dict(l=200, r=50, t=50, b=50)
+    )
+
+    return fig
+
+
+def create_trend_analysis_chart(data_series: List[Dict[str, Any]], title: str = "Trend Analysis"):
+    """Create a line chart with dots for trend analysis"""
+    if not data_series:
+        return None
+
+    # Extract data for plotting
+    x_values = [item.get('label', f'Point {i+1}') for i, item in enumerate(data_series)]
+    y_values = [item.get('value', 0) for item in data_series]
+
+    # Create line chart with markers
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=y_values,
+            mode='lines+markers',
+            name='Trend',
+            line=dict(color='#3498db', width=3),
+            marker=dict(
+                size=12,
+                color='#e74c3c',
+                line=dict(width=2, color='white')
+            ),
+            hovertemplate='<b>%{x}</b><br>Value: %{y}<extra></extra>'
+        )
+    )
+
+    # Add area fill under the line
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=y_values,
+            fill='tonexty',
+            mode='none',
+            fillcolor='rgba(52, 152, 219, 0.2)',
+            name='Area',
+            showlegend=False
+        )
+    )
+
+    fig.update_layout(
+        title=title,
+        height=400,
+        font=dict(size=12),
+        showlegend=True,
+        xaxis_title="Categories",
+        yaxis_title="Values"
     )
 
     return fig
